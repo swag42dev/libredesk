@@ -1,0 +1,11 @@
+# Keep the build context small and make sure a local build never leaks stale
+# artifacts into the image — the frontend stage produces frontend/dist itself.
+.git
+.github
+**/node_modules
+frontend/dist
+frontend/cypress
+db-backups
+libredesk
+config.toml
+*.log

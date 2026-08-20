@@ -1,0 +1,73 @@
+# Builds libredesk from source, the way `make build` does: the frontend apps are
+# compiled with pnpm, the Go binary is built with the same ldflags goreleaser uses,
+# and stuffbin packs the static assets into the binary.
+#
+# The upstream Dockerfile only copies a binary goreleaser has already built, so it
+# cannot be used on its own. This one is self-contained; railway.json points the
+# Railway builder at it.
+
+# Version reported by the app. Railway passes a service variable of the same name
+# in as a build arg, so bumping the deployed version is a variable change.
+ARG APP_VERSION=v2.7.1
+
+# ---------------------------------------------------------------------------
+# Frontend: main app + widget.
+# ---------------------------------------------------------------------------
+FROM node:22-bookworm-slim AS frontend
+
+# Cypress is a devDependency and its postinstall pulls a ~100MB browser binary
+# that nothing here needs.
+ENV CYPRESS_INSTALL_BINARY=0
+
+RUN corepack enable
+
+WORKDIR /src/frontend
+
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY frontend/ ./
+
+ARG APP_VERSION
+ENV VITE_APP_VERSION=${APP_VERSION}
+RUN pnpm build:main && pnpm build:widget
+
+# ---------------------------------------------------------------------------
+# Backend: Go binary with the frontend stuffed into it.
+# ---------------------------------------------------------------------------
+FROM golang:1.25-bookworm AS backend
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+RUN go install github.com/knadh/stuffbin/...@latest
+
+COPY . .
+COPY --from=frontend /src/frontend/dist ./frontend/dist
+
+ARG APP_VERSION
+RUN CGO_ENABLED=0 go build -a \
+        -ldflags="-s -w \
+            -X 'main.buildString=${APP_VERSION}' \
+            -X 'main.versionString=${APP_VERSION}' \
+            -X 'github.com/abhinavxd/libredesk/internal/version.Version=${APP_VERSION}'" \
+        -o libredesk cmd/*.go \
+    && stuffbin -a stuff -in libredesk -out libredesk frontend/dist i18n schema.sql static
+
+# ---------------------------------------------------------------------------
+# Runtime: same layout as the official libredesk/libredesk image, so the service
+# start command (`./libredesk --install ... && exec ./libredesk`) keeps working.
+# ---------------------------------------------------------------------------
+FROM alpine:3.21
+
+RUN apk --no-cache add ca-certificates tzdata
+
+WORKDIR /libredesk
+
+COPY --from=backend /src/libredesk .
+COPY config.sample.toml config.toml
+
+EXPOSE 9000
+
+CMD ["./libredesk"]
