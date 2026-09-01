@@ -8,7 +8,7 @@
 
 # Version reported by the app. Railway passes a service variable of the same name
 # in as a build arg, so bumping the deployed version is a variable change.
-ARG APP_VERSION=v2.7.1
+ARG APP_VERSION=v2.8.0
 
 # ---------------------------------------------------------------------------
 # Frontend: main app + widget.
