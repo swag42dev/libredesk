@@ -28,6 +28,11 @@ RUN pnpm install --frozen-lockfile
 
 COPY frontend/ ./
 
+# v2.8.0 added a vite alias '@public-static' -> ../static/public/static, so the main
+# app now pulls article-content.css from the repo's static/ dir, which lives outside
+# frontend/. Without this the build fails with ENOENT on that file.
+COPY static/ /src/static/
+
 ARG APP_VERSION
 ENV VITE_APP_VERSION=${APP_VERSION}
 RUN pnpm build:main && pnpm build:widget
